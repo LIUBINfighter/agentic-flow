@@ -11,7 +11,7 @@ interface ChatViewProps {
 }
 
 const ChatViewComponent: React.FC<ChatViewProps> = ({ document, onUpdate }) => {
-  const [activeSection, setActiveSection] = React.useState<'inbox' | 'chat' | 'workspace'>('chat');
+  const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
 
   const renderInbox = () => (
     <div className="chat-inbox">
@@ -100,55 +100,58 @@ const ChatViewComponent: React.FC<ChatViewProps> = ({ document, onUpdate }) => {
 
   return (
     <div className="chat-view">
-      <div className="chat-tabs">
-        <button
-          className={activeSection === 'inbox' ? 'active' : ''}
-          onClick={() => setActiveSection('inbox')}
-        >
-          收件箱
-        </button>
-        <button
-          className={activeSection === 'chat' ? 'active' : ''}
-          onClick={() => setActiveSection('chat')}
-        >
-          对话
-        </button>
-        <button
-          className={activeSection === 'workspace' ? 'active' : ''}
-          onClick={() => setActiveSection('workspace')}
-        >
-          工作区
-        </button>
-      </div>
-      <div className="chat-content">
-        {activeSection === 'inbox' && renderInbox()}
-        {activeSection === 'chat' && (
-          <>
-            {renderChat()}
-            <div className="chat-input-container">
-              <textarea
-                className="chat-input"
-                value={inputMessage}
-                onChange={(e) => setInputMessage(e.target.value)}
-                placeholder="输入消息..."
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSendMessage();
-                  }
-                }}
-              />
-              <button
-                className="send-button"
-                onClick={handleSendMessage}
-                disabled={!inputMessage.trim()}
-              >
-                发送
-              </button>
+      <div className={`chat-main ${isSidebarOpen ? 'sidebar-open' : ''}`}>
+        <div className="chat-history">
+          {document.chatHistory.messages.map(message => (
+            <div key={message.id} className={`chat-message ${message.type}`}>
+              <div className="message-content">{message.content}</div>
             </div>
-          </>
-        )}
-        {activeSection === 'workspace' && renderWorkspace()}
+          ))}
+        </div>
+        <div className="chat-input-container">
+          <textarea
+            className="chat-input"
+            value={inputMessage}
+            onChange={(e) => setInputMessage(e.target.value)}
+            placeholder="输入消息..."
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSendMessage();
+              }
+            }}
+          />
+          <button
+            className="send-button"
+            onClick={handleSendMessage}
+            disabled={!inputMessage.trim()}
+          >
+            发送
+          </button>
+        </div>
+      </div>
+      <div className={`workspace-sidebar ${isSidebarOpen ? 'open' : ''}`}>
+        <button
+          className="sidebar-toggle"
+          onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+        >
+          {isSidebarOpen ? '›' : '‹'}
+        </button>
+        <div className="workspace-content">
+          {document.workspace.references.map((ref, idx) => (
+            <div key={idx} className={`workspace-item ${ref.type}`}>
+              <span className="item-type">{ref.type}</span>
+              <span className="item-path">{ref.path}</span>
+              {ref.metadata?.excerpts && (
+                <div className="item-excerpts">
+                  {ref.metadata.excerpts.map((excerpt, i) => (
+                    <p key={i} className="excerpt">{excerpt}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
