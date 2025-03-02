@@ -1,4 +1,5 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
+import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile, WorkspaceLeaf } from 'obsidian';
+import { ChatView, VIEW_TYPE_CHAT } from './ChatView';
 
 // Remember to rename these classes and interfaces!
 
@@ -10,7 +11,7 @@ const DEFAULT_SETTINGS: MyPluginSettings = {
 	mySetting: 'default'
 }
 
-export default class MyPlugin extends Plugin {
+export default class AgentFlowPlugin extends Plugin {
 	settings: MyPluginSettings;
 
 	async onload() {
@@ -76,6 +77,47 @@ export default class MyPlugin extends Plugin {
 
 		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
 		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
+
+		// 注册视图
+		this.registerView(
+			VIEW_TYPE_CHAT,
+			(leaf: WorkspaceLeaf) => new ChatView(leaf)
+		);
+
+		// 添加创建聊天文件的命令
+		this.addCommand({
+			id: 'create-chat-file',
+			name: '创建代理流程聊天',
+			callback: async () => {
+				const fileName = `chat-${Date.now()}.md`;
+				const template = this.getTemplateContent();
+				
+				const file = await this.app.vault.create(fileName, template);
+				
+				// 打开文件并激活视图
+				const leaf = this.app.workspace.getUnpinnedLeaf();
+				await leaf.setViewState({
+					type: VIEW_TYPE_CHAT,
+					state: { file: file.path }
+				});
+				
+				this.app.workspace.revealLeaf(leaf);
+			}
+		});
+
+		// 注册文件处理器
+		this.registerMarkdownCodeBlockProcessor('agentic-flow', (source, el, ctx) => {
+			// 处理代码块
+		});
+
+		// 注册事件处理器，检测文件打开
+		this.registerEvent(
+			this.app.workspace.on('file-open', (file: TFile) => {
+				if (this.isAgentFlowFile(file)) {
+					this.handleAgentFlowFile(file);
+				}
+			})
+		);
 	}
 
 	onunload() {
@@ -88,6 +130,80 @@ export default class MyPlugin extends Plugin {
 
 	async saveSettings() {
 		await this.saveData(this.settings);
+	}
+
+	private getTemplateContent(): string {
+		const timestamp = new Date().toISOString();
+		
+		return [
+			'---',
+			'title: New Chat',
+			'agentic-flow: chat',
+			`time-stamp: ${timestamp}`,
+			'---',
+			'',
+			'## Inbox',
+			'',
+			'### Card 1',
+			'',
+			'text 这里是inbox card示例',
+			'',
+			'### Card 2',
+			'',
+			'url preview 这里是inbox card示例',
+			'',
+			'## ChatHistory',
+			'',
+			'### User',
+			'',
+			'%%用户输入%%',
+			'',
+			'### System',
+			'',
+			'> [get]: [weather]',
+			'> [Search]: [keywords]',
+			'> [File Read]: [[arvix10086.pdf]]',
+			'> [think & evaluate]',
+			'',
+			'%%调用工具的系统消息%%',
+			'',
+			'### Agent',
+			'',
+			'ok,let\'s check [[dairy.md]]',
+			'',
+			'%%ai回答%%',
+			'',
+			'## Workspace',
+			'',
+			'[[arvix10086.pdf]]',
+			'[[example.png]]',
+			'',
+			'%%这里是ai参考的阅读内容双链%%'
+		].join('\n');
+	}
+
+	private isAgentFlowFile(file: TFile): boolean {
+		if (!file || file.extension !== 'md') return false;
+		
+		const cache = this.app.metadataCache.getFileCache(file);
+		return cache?.frontmatter?.['agentic-flow'] === 'chat';
+	}
+
+	private async handleAgentFlowFile(file: TFile) {
+		// 获取或创建视图
+		let leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_CHAT)[0];
+		if (!leaf) {
+			leaf = this.app.workspace.getLeaf('split');
+		}
+
+		// 设置视图类型和状态
+		await leaf.setViewState({
+			type: VIEW_TYPE_CHAT,
+			state: { file: file.path }
+		});
+
+		// 激活视图
+		this.app.workspace.revealLeaf(leaf);
 	}
 }
 
