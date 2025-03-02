@@ -1,4 +1,4 @@
-import { BaseCard } from '../cards/BaseCard';
+import { BaseCard } from './BaseCard';
 import { EventEmitter } from 'events';
 
 export type ListType = 'inbox' | 'chat' | 'workspace';
@@ -14,11 +14,13 @@ export class CardList extends EventEmitter {
   }
 
   addCard(card: BaseCard, index?: number) {
+    console.log('Adding card:', card, 'at index:', index);
     if (typeof index === 'number') {
       this.cards.splice(index, 0, card);
     } else {
       this.cards.push(card);
     }
+    console.log('Cards after add:', this.cards);
     this.emit('change', this.cards);
     return card;
   }
@@ -40,6 +42,7 @@ export class CardList extends EventEmitter {
   }
 
   getCards(): BaseCard[] {
+    console.log('Getting cards:', this.cards);
     return [...this.cards];
   }
 

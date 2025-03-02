@@ -1,37 +1,43 @@
 export interface AgentFlowData {
-  agents: {[id: string]: Agent};
-  flows: {[id: string]: Flow};
-  nodes: {[id: string]: Node};
-  relationships: {
-    parentFlow: {[nodeId: string]: string},
-    nodeOrder: {[flowId: string]: string[]},
-    dependencies: {[nodeId: string]: string[]}
-  },
-  chat?: {
-    sections: {[key: string]: ChatSection}
-  }
+  agents: Agent[];
+  flows: Flow[];
+  nodes: Node[];
+  relationships: Relationship[];
+  chat: {
+    sections: Record<string, ChatSection>;
+  };
 }
 
 export interface Agent {
   id: string;
   name: string;
-  type: AgentType;
-  config: AgentConfig;
+  role: string;
+  description: string;
+  systemPrompt: string;
+  metadata: Record<string, any>;
 }
 
 export interface Flow {
   id: string;
-  title: string;
-  description: string;
-  status: FlowStatus;
+  name: string;
+  steps: FlowStep[];
+}
+
+export interface FlowStep {
+  id: string;
+  content: string;
 }
 
 export interface Node {
   id: string;
-  type: NodeType;
+  name: string;
   content: string;
-  agentId?: string;
-  metadata: NodeMetadata;
+}
+
+export interface Relationship {
+  id: string;
+  source: string;
+  target: string;
 }
 
 export enum AgentType {
@@ -49,7 +55,7 @@ export enum FlowStatus {
 export enum NodeType {
   PROMPT = 'prompt',
   RESPONSE = 'response',
-  ACTION = 'action'
+  ACTION'
 }
 
 export interface NodeMetadata {
@@ -77,8 +83,10 @@ export interface ViewState {
 }
 
 export interface ChatMessage {
+  id: string;           // 添加必需的 id 属性
   role: 'user' | 'system' | 'agent';
   content: string;
+  timestamp?: number;
   metadata?: {
     actions?: string[];
     references?: string[];

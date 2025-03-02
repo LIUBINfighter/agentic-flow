@@ -34,28 +34,6 @@ export class AgentFlowParser {
     };
   }
 
-  private parseAgents(agentsYaml: any) {
-    return agentsYaml || {};
-  }
-
-  private parseFlows(content: string) {
-    // 实现流程解析逻辑
-    return {};
-  }
-
-  private parseNodes(content: string) {
-    // 实现节点解析逻辑
-    return {};
-  }
-
-  private parseRelationships(content: string) {
-    // 实现关系解析逻辑
-    return {
-      parentFlow: {},
-      nodeOrder: {},
-      dependencies: {}
-    };
-  }
 
   private parseContent(content: string) {
     const sections = this.parseSections(content);
@@ -102,9 +80,11 @@ export class AgentFlowParser {
       const messageContent = match[2].trim();
       
       const message: ChatMessage = {
+        id: `msg-${Date.now()}-${messages.length}`,
         role,
         content: messageContent,
-        metadata: this.parseMessageMetadata(messageContent)
+        metadata: this.parseMessageMetadata(messageContent),
+        timestamp: Date.now()
       };
       
       messages.push(message);
@@ -116,8 +96,8 @@ export class AgentFlowParser {
     };
   }
 
-  private parseMessageMetadata(content: string) {
-    const metadata: ChatMessage['metadata'] = {};
+  private parseMessageMetadata(content: string): MessageMetadata {
+    const metadata: MessageMetadata = {};
     
     // 解析操作指令
     const actions = content.match(/>\s*\[(.*?)\]:\s*\[(.*?)\]/g);
@@ -129,6 +109,12 @@ export class AgentFlowParser {
     const references = content.match(/\[\[(.*?)\]\]/g);
     if (references) {
       metadata.references = references.map(r => r.slice(2, -2));
+    }
+    
+    // 解析时间戳（如果有）
+    const timestamp = content.match(/\{timestamp:\s*(\d+)\}/);
+    if (timestamp) {
+      metadata.timestamp = parseInt(timestamp[1]);
     }
     
     return metadata;
@@ -161,6 +147,123 @@ export class AgentFlowParser {
       type: 'workspace',
       references
     };
+  }
+
+  private parseAgents(agents: any[] = []): Agent[] {
+    return agents.map(agent => ({
+      id: agent.id || `agent-${Date.now()}`,
+      name: agent.name || '',
+      role: agent.role || '',
+      description: agent.description || '',
+      systemPrompt: agent.systemPrompt || '',
+      metadata: agent.metadata || {}
+    }));
+  }
+
+  private parseFlows(content: string): Flow[] {
+    const flows: Flow[] = [];
+    const flowRegex = /### Flow: (.*?)\n([\s\S]*?)(?=### |$)/g;
+    let match;
+
+    while ((match = flowRegex.exec(content)) !== null) {
+      flows.push({
+        id: `flow-${Date.now()}-${flows.length}`,
+        name: match[1].trim(),
+        steps: this.parseFlowSteps(match[2])
+      });
+    }
+
+    return flows;
+  }
+
+  private parseFlowSteps(content: string): FlowStep[] {
+    const steps: FlowStep[] = [];
+    const stepRegex = /\d+\.\s*(.*?)(?=\n\d+\.|$)/gs;
+    let match;
+
+    while ((match = stepRegex.exec(content)) !== null) {
+      steps.push({
+        id: `step-${Date.now()}-${steps.length}`,
+        content: match[1].trim()
+      });
+    }
+
+    return steps;
+  }
+
+  private parseNodes(content: string): Node[] {
+    const nodes: Node[] = [];
+    const nodeRegex = /### Node: (.*?)\n([\s\S]*?)(?=### |$)/g;
+    let match;
+
+    while ((match = nodeRegex.exec(content)) !== null) {
+      nodes.push({
+        id: `node-${Date.now()}-${nodes.length}`,
+        name: match[1].trim(),
+        content: match[2].trim()
+      });
+    }
+
+    return nodes;
+  }
+
+  private parseRelationships(content: string): Relationship[] {
+    const relationships: Relationship[] = [];
+    const relationRegex = /\[(.*?)\]\s*->\s*\[(.*?)\]/g;
+    let match;
+
+    while ((match = relationRegex.exec(content)) !== null) {
+      relationships.push({
+        id: `rel-${Date.now()}-${relationships.length}`,
+        source: match[1].trim(),
+        target: match[2].trim()
+      });
+    }
+
+    return relationships;
+  }
+
+  private stringifyFrontmatter(data: AgentFlowData): string {
+    return stringifyYaml({
+      agents: data.agents
+    });
+  }
+
+  private stringifyContent(data: AgentFlowData): string {
+    let content = '';
+
+    // 添加 Chat 部分
+    if (data.chat) {
+      Object.entries(data.chat.sections).forEach(([name, section]) => {
+        content += `## ${name}\n\n`;
+        if (section.type === 'history') {
+          section.messages.forEach(msg => {
+            content += `### ${msg.role.charAt(0).toUpperCase() + msg.role.slice(1)}\n\n${msg.content}\n\n`;
+          });
+        }
+      });
+    }
+
+    // 添加 Flows
+    data.flows.forEach(flow => {
+      content += `### Flow: ${flow.name}\n`;
+      flow.steps.forEach((step, index) => {
+        content += `${index + 1}. ${step.content}\n`;
+      });
+      content += '\n';
+    });
+
+    // 添加 Nodes
+    data.nodes.forEach(node => {
+      content += `### Node: ${node.name}\n${node.content}\n\n`;
+    });
+
+    // 添加 Relationships
+    data.relationships.forEach(rel => {
+      content += `[${rel.source}] -> [${rel.target}]\n`;
+    });
+
+    return content;
   }
 
   // 其他解析方法...

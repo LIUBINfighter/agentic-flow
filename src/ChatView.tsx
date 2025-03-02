@@ -15,7 +15,10 @@ export class ChatView extends ItemView {
   constructor(leaf: WorkspaceLeaf) {
     super(leaf);
     this.parser = new AgentFlowParser();
-    this.chatContainer = new ChatContainer();
+    
+    // 从插件设置获取 API key
+    const apiKey = this.app.plugins.plugins['agentic-flow'].settings.apiKey;
+    this.chatContainer = new ChatContainer(apiKey);
     this.sidebar = new Sidebar();
   }
 
@@ -50,42 +53,46 @@ export class ChatView extends ItemView {
   }
 
   private async initializeView() {
+    console.log('Initializing view with data:', this.data);
     const container = this.containerEl.children[1];
     container.empty();
     container.addClass('agentic-flow-chat');
 
-    const mainContainer = container.createDiv({
-      cls: 'agentic-flow-container'
-    });
+    try {
+        const mainContainer = container.createDiv({
+            cls: 'agentic-flow-container'
+        });
 
-    // 创建主聊天区域
-    const chatArea = mainContainer.createDiv({
-      cls: 'chat-area'
-    });
+        // 创建消息列表容器
+        const chatArea = mainContainer.createDiv({
+            cls: 'chat-area'
+        });
 
-    // 创建聊天头部
-    const chatHeader = chatArea.createDiv({
-      cls: 'chat-header'
-    });
-    chatHeader.createEl('h2', { text: 'Chat History' });
+        // 创建消息列表容器，确保它存在
+        const messagesContainer = chatArea.createDiv({
+            cls: 'chat-messages'
+        });
 
-    // 创建消息列表区域
-    const messagesContainer = chatArea.createDiv({
-      cls: 'chat-messages'
-    });
+        // 确保消息列表容器可被找到
+        messagesContainer.id = 'chat-messages-container';
 
-    // 创建输入区域
-    this.createChatInputArea(chatArea);
+        this.createChatInputArea(chatArea);
+        this.createSidebar(mainContainer);
 
-    // 创建侧边栏
-    this.createSidebar(mainContainer);
+        // 监听 ChatContainer 的变化
+        this.chatContainer.on('change', (cards) => {
+            console.log('ChatContainer change event:', cards);
+            this.refreshChatMessages();
+        });
 
-    // 注册文件监听
-    this.registerEvent(
-      this.app.vault.on('modify', this.handleFileChange.bind(this))
-    );
+        await this.refresh();
+        
+        // 记录初始化完成
+        console.log('View initialization completed');
 
-    await this.refresh();
+    } catch (error) {
+        console.error('Error initializing view:', error);
+    }
   }
 
   private createChatInputArea(container: HTMLElement) {
@@ -229,14 +236,21 @@ export class ChatView extends ItemView {
   }
 
   private async refresh() {
-    if (!this.currentFile) return;
+    if (!this.currentFile) {
+        console.log('No current file to refresh');
+        return;
+    }
 
     try {
-      const content = await this.app.vault.read(this.currentFile);
-      this.data = this.parser.parse(content);
-      await this.updateView();
+        const content = await this.app.vault.read(this.currentFile);
+        console.log('File content loaded:', content.substring(0, 100) + '...');
+        
+        this.data = this.parser.parse(content);
+        console.log('Parsed data:', this.data);
+        
+        await this.updateView();
     } catch (error) {
-      console.error('Failed to refresh view:', error);
+        console.error('Failed to refresh view:', error);
     }
   }
 
@@ -253,6 +267,10 @@ export class ChatView extends ItemView {
     
     // 更新工作区引用
     this.updateWorkspaceRefs(sections.Workspace?.references || []);
+
+    if (this.data?.chat?.sections?.ChatHistory) {
+      this.refreshChatMessages();
+    }
   }
 
   private updateInboxCards(cards: any[]) {
@@ -343,16 +361,23 @@ export class ChatView extends ItemView {
   }
 
   private async handleSendMessage(content: string) {
-    if (!this.currentFile) return;
+    if (!this.currentFile) {
+        console.warn('No current file selected');
+        return;
+    }
 
-    // 1. 更新内存中的数据
-    const userCard = await this.chatContainer.addUserMessage(content);
+    try {
+        console.log('Sending message:', content);
+        const userCard = await this.chatContainer.addUserMessage(content);
+        
+        // 保存用户消息到文件
+        await this.syncMessageToFile(userCard);
 
-    // 2. 更新视图
-    this.refreshChatMessages();
-
-    // 3. 同步到文件
-    await this.syncMessageToFile(userCard);
+        // ChatContainer 会自动触发 AI 回复
+        // AI 回复会通过 change 事件更新视图
+    } catch (error) {
+        console.error('Error handling send message:', error);
+    }
   }
 
   private async syncMessageToFile(card: any) {
@@ -476,7 +501,19 @@ export class ChatView extends ItemView {
   }
 
   private renderMessage(container: HTMLElement, message: ChatMessage) {
-    const msgEl = container.createDiv({ cls: `message message-${message.role}` });
+    const msgEl = container.createDiv({ 
+      cls: `message message-${message.role} draggable-card`,
+      attr: {
+        'draggable': 'true',
+        'data-message-id': message.id
+      }
+    });
+
+    // 添加拖拽事件监听
+    msgEl.addEventListener('dragstart', (e) => this.handleDragStart(e, message));
+    msgEl.addEventListener('dragend', this.handleDragEnd);
+    msgEl.addEventListener('dragover', this.handleDragOver);
+    msgEl.addEventListener('drop', (e) => this.handleDrop(e, message));
 
     // 角色标签
     msgEl.createEl('div', { text: message.role.toUpperCase(), cls: 'message-role' });
@@ -508,6 +545,94 @@ export class ChatView extends ItemView {
         });
       });
     }
+  }
+
+  private handleDragStart(e: DragEvent, message: ChatMessage) {
+    if (!e.dataTransfer) return;
+    
+    e.dataTransfer.setData('text/plain', message.id);
+    e.dataTransfer.effectAllowed = 'move';
+    
+    const target = e.target as HTMLElement;
+    target.addClass('dragging');
+    
+    // 存储原始位置信息
+    this.dragSource = {
+      element: target,
+      message: message
+    };
+  }
+
+  private handleDragEnd(e: DragEvent) {
+    const target = e.target as HTMLElement;
+    target.removeClass('dragging');
+    this.dragSource = null;
+  }
+
+  private handleDragOver(e: DragEvent) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    
+    const target = e.target as HTMLElement;
+    const messageCard = target.closest('.draggable-card');
+    
+    if (messageCard && this.dragSource?.element !== messageCard) {
+      const rect = messageCard.getBoundingClientRect();
+      const midY = rect.top + rect.height / 2;
+      
+      // 添加放置指示器
+      messageCard.addClass(e.clientY < midY ? 'drop-above' : 'drop-below');
+    }
+  }
+
+  private handleDrop(e: DragEvent, targetMessage: ChatMessage) {
+    e.preventDefault();
+    
+    if (!this.dragSource) return;
+    
+    const sourceMessage = this.dragSource.message;
+    const sourceIndex = this.findMessageIndex(sourceMessage);
+    const targetIndex = this.findMessageIndex(targetMessage);
+    
+    if (sourceIndex === -1 || targetIndex === -1) return;
+    
+    // 更新消息顺序
+    this.updateMessageOrder(sourceIndex, targetIndex);
+    
+    // 清理拖拽状态
+    document.querySelectorAll('.drop-above, .drop-below').forEach(el => {
+      el.removeClass('drop-above');
+      el.removeClass('drop-below');
+    });
+  }
+
+  private findMessageIndex(message: ChatMessage): number {
+    return this.data.chat.sections.ChatHistory.messages.findIndex(
+      (m: ChatMessage) => m.id === message.id
+    );
+  }
+
+  private updateMessageOrder(sourceIndex: number, targetIndex: number) {
+    const messages = this.data.chat.sections.ChatHistory.messages;
+    const [movedMessage] = messages.splice(sourceIndex, 1);
+    messages.splice(targetIndex, 0, movedMessage);
+    
+    // 更新状态并保存
+    this.setState({
+      ...this.data,
+      chat: {
+        ...this.data.chat,
+        sections: {
+          ...this.data.chat.sections,
+          ChatHistory: {
+            ...this.data.chat.sections.ChatHistory,
+            messages
+          }
+        }
+      }
+    });
+    
+    this.saveChanges();
   }
 
   private renderWorkspace(container: HTMLElement, section: ChatSection) {
@@ -618,5 +743,119 @@ export class ChatView extends ItemView {
         text: `[[${ref}]]`
       });
     });
+  }
+
+  private renderMessages(messages: ChatMessage[]) {
+    const messagesContainer = this.containerEl.querySelector('.chat-messages');
+    if (!messagesContainer) return;
+
+    messagesContainer.empty();
+    
+    messages.forEach(msg => {
+      const messageEl = this.createMessageElement(msg);
+      messagesContainer.appendChild(messageEl);
+    });
+
+    // 滚动到最新消息
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+  }
+
+  private createMessageElement(message: ChatMessage): HTMLElement {
+    if (!message || !message.role) {
+      console.warn('Invalid message object:', message);
+      return createDiv({ cls: 'message message-error' });
+    }
+
+    const messageEl = createDiv({
+      cls: `message message-${message.role}`
+    });
+
+    // 添加角色标签
+    messageEl.createDiv({
+      cls: 'message-role',
+      text: message.role.toUpperCase()
+    });
+
+    // 添加内容容器
+    const contentEl = messageEl.createDiv({
+      cls: 'message-content'
+    });
+
+    // 处理系统消息的特殊格式
+    if (message.role === 'system' && message.metadata?.actions) {
+      message.metadata.actions.forEach(action => {
+        contentEl.createDiv({
+          cls: 'message-action',
+          text: action
+        });
+      });
+    }
+
+    // 添加主要内容
+    contentEl.createDiv({
+      cls: 'message-text',
+      text: message.content || ''
+    });
+
+    // 添加引用链接
+    if (message.metadata?.references?.length) {
+      const refsEl = messageEl.createDiv({
+        cls: 'message-refs'
+      });
+
+      message.metadata.references.forEach(ref => {
+        const refLink = refsEl.createEl('a', {
+          cls: 'message-ref',
+          text: `[[${ref}]]`
+        });
+
+        refLink.addEventListener('click', (e) => {
+          e.preventDefault();
+          this.app.workspace.openLinkText(ref, '', true);
+        });
+      });
+    }
+
+    // 添加时间戳
+    if (message.timestamp) {
+      messageEl.createDiv({
+        cls: 'message-timestamp',
+        text: new Date(message.timestamp).toLocaleTimeString()
+      });
+    }
+
+    return messageEl;
+  }
+
+  private refreshChatMessages() {
+    const messagesContainer = this.containerEl.querySelector('#chat-messages-container');
+    if (!messagesContainer) {
+      console.error('Messages container not found');
+      return;
+    }
+
+    try {
+      messagesContainer.empty();
+      const messages = this.chatContainer.getMessages();
+      console.log('Messages to render:', messages);
+
+      if (Array.isArray(messages)) {
+        messages.forEach(msg => {
+          if (msg && typeof msg === 'object') {
+            const messageEl = this.createMessageElement(msg);
+            messagesContainer.appendChild(messageEl);
+          } else {
+            console.warn('Invalid message object:', msg);
+          }
+        });
+      } else {
+        console.warn('Messages is not an array:', messages);
+      }
+
+      // 滚动到底部
+      messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    } catch (error) {
+      console.error('Error refreshing messages:', error);
+    }
   }
 }

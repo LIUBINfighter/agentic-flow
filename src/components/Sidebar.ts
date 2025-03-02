@@ -1,4 +1,4 @@
-import { CardList } from './lists/CardList';
+import { CardList } from './CardList';
 import { EventEmitter } from 'events';
 
 export class Sidebar extends EventEmitter {
