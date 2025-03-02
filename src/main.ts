@@ -2,6 +2,33 @@ import { Plugin, TFile, Modal, App, PluginSettingTab, Setting } from 'obsidian';
 import { ChatView, VIEW_TYPE_CHAT } from './ChatView';
 
 export default class AgenticFlowPlugin extends Plugin {
+  private generateNewChatTemplate(): string {
+    const timestamp = Date.now();
+    return `---
+title: New Chat
+agenticflow: chat
+timestamp: ${timestamp}
+---
+
+## Inbox
+
+## Chat History
+
+AI: 你好!我是你的AI助手。我可以帮你完成各种任务,包括:
+- 回答问题
+- 分析文档
+- 总结内容
+- 提供建议
+请告诉我你需要什么帮助?
+
+## WorkSpace
+
+> [!agenticflow-setttings]
+>
+
+`;  // 移除了有问题的代码块标记
+  }
+
   async onload() {
     // 注册聊天视图
     this.registerView(
@@ -49,7 +76,7 @@ export default class AgenticFlowPlugin extends Plugin {
 
         const file = await this.app.vault.create(
           `${chatsDir}/${Date.now()}.md`,
-          '---\ntitle: New Chat\nagenticflow: chat\ntimestamp: ' + Date.now() + '\n---\n\n# Chat\n\n'
+          this.generateNewChatTemplate()
         );
 
         const leaf = this.app.workspace.getLeaf();

@@ -1,3 +1,12 @@
+import { 
+  IChatDocument,
+  IDocumentMetadata,
+  IInboxSection,
+  IChatHistory,
+  IWorkspaceSection,
+  IMessage
+} from './types/IChatDocument';
+
 // 核心数据模型
 export interface ChatDocument {
   metadata: DocumentMetadata;
@@ -77,10 +86,18 @@ export interface WorkspaceReference {
 
 // 解析器类
 export class ChatDocumentParser {
-  async parse(content: string): Promise<ChatDocument> {
+  private messageIdCounter: number = 0;
+
+  private generateMessageId(): string {
+    this.messageIdCounter += 1;
+    return `msg-${Date.now()}-${this.messageIdCounter}`;
+  }
+
+  async parse(content: string): Promise<IChatDocument> {
     const sections = this.splitSections(content);
     
     return {
+      id: Date.now().toString(), // 添加id字段
       metadata: this.parseMetadata(sections.frontmatter),
       inbox: this.parseInbox(sections.inbox),
       chatHistory: this.parseChatHistory(sections.chat),
@@ -98,11 +115,11 @@ export class ChatDocumentParser {
     // 提取其他部分
     const parts = content.split('# ');
     parts.forEach(part => {
-      if (part.startsWith('收件箱\n')) {
+      if (part.startsWith('Inbox\n')) {
         sections.inbox = part.slice(4);
-      } else if (part.startsWith('对话历史\n')) {
+      } else if (part.startsWith('Chat History\n')) {
         sections.chat = part.slice(5);
-      } else if (part.startsWith('工作区\n')) {
+      } else if (part.startsWith('WorkSpace\n')) {
         sections.workspace = part.slice(4);
       }
     });
@@ -158,8 +175,10 @@ export class ChatDocumentParser {
 
     messageBlocks.forEach(block => {
       const lines = block.split('\n');
+      const idMatch = lines[0].match(/\[id:(.*?)\]/);
+      
       const message: Message = {
-        id: Date.now().toString(),
+        id: idMatch ? idMatch[1] : this.generateMessageId(),
         type: lines[0].includes('用户:') ? 'user' : 'agent',
         content: lines.slice(1).join('\n'),
         timestamp: Date.now()
@@ -172,20 +191,32 @@ export class ChatDocumentParser {
 
   private parseWorkspace(content: string): WorkspaceSection {
     const references: WorkspaceReference[] = [];
-    const refBlocks = content.split('\n\n').filter(Boolean);
+    
+    // 添加空值检查
+    if (!content) {
+      return { references };
+    }
 
-    refBlocks.forEach(block => {
-      const lines = block.split('\n');
-      const reference: WorkspaceReference = {
-        type: 'file',
-        path: lines[0],
-        metadata: {
-          lastAccessed: Date.now(),
-          excerpts: lines.slice(1)
+    try {
+      const refBlocks = content.split('\n\n').filter(Boolean);
+
+      refBlocks.forEach(block => {
+        const lines = block.split('\n').filter(Boolean);
+        if (lines.length > 0) {
+          const reference: WorkspaceReference = {
+            type: 'file',
+            path: lines[0],
+            metadata: {
+              lastAccessed: Date.now(),
+              excerpts: lines.slice(1)
+            }
+          };
+          references.push(reference);
         }
-      };
-      references.push(reference);
-    });
+      });
+    } catch (error) {
+      console.error('Error parsing workspace:', error);
+    }
 
     return { references };
   }
@@ -193,7 +224,7 @@ export class ChatDocumentParser {
 
 // 序列化器类
 export class ChatDocumentSerializer {
-  serialize(document: ChatDocument): string {
+  serialize(document: IChatDocument): string {
     const parts: string[] = [];
 
     // 添加frontmatter
@@ -207,7 +238,7 @@ export class ChatDocumentSerializer {
     parts.push('---\n');
 
     // 序列化收件箱
-    parts.push('# 收件箱');
+    parts.push('## Inbox');
     document.inbox.cards.forEach(card => {
       parts.push(card.content);
       if (card.metadata?.preview) {
@@ -220,7 +251,7 @@ export class ChatDocumentSerializer {
     // 序列化对话历史
     parts.push('# 对话历史');
     document.chatHistory.messages.forEach(message => {
-      parts.push(`${message.type === 'user' ? '用户:' : 'AI:'}`);
+      parts.push(`${message.type === 'user' ? '用户:' : 'AI:'} [id:${message.id}]`);
       parts.push(message.content);
       if (message.references) {
         message.references.forEach(ref => {
@@ -232,7 +263,7 @@ export class ChatDocumentSerializer {
     });
 
     // 序列化工作区
-    parts.push('# 工作区');
+    parts.push('## WorkSpace');
     document.workspace.references.forEach(ref => {
       parts.push(ref.path);
       if (ref.metadata?.excerpts) {
