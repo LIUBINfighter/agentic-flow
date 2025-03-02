@@ -138,16 +138,61 @@ export class ChatView extends ItemView {
   }
 
   private createSidebar(container: HTMLElement) {
-    const sidebarContainer = container.createDiv({ cls: 'sidebar-container' });
-    const toggleButton = sidebarContainer.createDiv({
-      cls: 'sidebar-toggle',
-      text: '>'
+    // 先创建主容器
+    const sidebarContainer = container.createDiv();
+    sidebarContainer.addClass('sidebar-container');
+
+    // 创建并插入切换按钮
+    const toggleButton = createDiv('sidebar-toggle');
+    toggleButton.setText('>');
+    sidebarContainer.appendChild(toggleButton);
+
+    // 直接绑定事件处理
+    toggleButton.addEventListener('click', (e: MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        // 切换侧边栏状态
+        const isCurrentlyHidden = sidebarContainer.hasClass('hidden');
+        if (isCurrentlyHidden) {
+            sidebarContainer.removeClass('hidden');
+            toggleButton.setText('>');
+        } else {
+            sidebarContainer.addClass('hidden');
+            toggleButton.setText('<');
+        }
+        
+        // 调试日志
+        console.log('Sidebar toggle clicked', { isCurrentlyHidden });
     });
 
-    const tabsContainer = sidebarContainer.createDiv({ cls: 'sidebar-tabs' });
-    const contentContainer = sidebarContainer.createDiv({ cls: 'sidebar-content' });
+    // 创建其他内容
+    const tabsContainer = sidebarContainer.createDiv('sidebar-tabs');
+    const contentContainer = sidebarContainer.createDiv('sidebar-content');
 
-    this.setupSidebar(sidebarContainer, toggleButton, tabsContainer, contentContainer);
+    // 设置标签页
+    this.setupSidebarTabs(tabsContainer, contentContainer);
+
+    return sidebarContainer;
+  }
+
+  private setupSidebarTabs(tabsContainer: HTMLElement, contentContainer: HTMLElement) {
+    // 创建标签页
+    ['Inbox', 'Workspace'].forEach((tabName, index) => {
+      const tab = tabsContainer.createDiv({
+        cls: `sidebar-tab ${index === 0 ? 'active' : ''}`,
+        text: tabName
+      });
+
+      tab.addEventListener('click', () => {
+        // 更新标签页状态
+        tabsContainer.findAll('.sidebar-tab').forEach(t => t.removeClass('active'));
+        tab.addClass('active');
+
+        // 更新内容
+        this.updateSidebarContent(contentContainer, tabName.toLowerCase());
+      });
+    });
   }
 
   private setupChatInput(textarea: HTMLTextAreaElement, sendButton: HTMLButtonElement) {
